@@ -44,6 +44,8 @@ services:
     inventree-db:
         image: postgres:17
         container_name: inventree-db
+        ports:
+            - "${INVENTREE_DB_PORT:-5432}:5432/tcp"
         expose:
             - ${INVENTREE_DB_PORT:-5432}/tcp
         environment:
@@ -62,6 +64,8 @@ services:
         container_name: inventree-cache
         env_file:
             - .env
+        ports:
+            - "${INVENTREE_CACHE_PORT:-6379}:6379/tcp"
         expose:
             - ${INVENTREE_CACHE_PORT:-6379}
         restart: always
@@ -91,6 +95,7 @@ services:
         image: inventree/inventree:${INVENTREE_TAG:-stable}
         container_name: inventree-worker
         command: invoke worker
+        network_mode: host
         depends_on:
             - inventree-server
         env_file:
@@ -98,6 +103,9 @@ services:
         volumes:
             # Data volume must map to /home/inventree/data
             - ${INVENTREE_EXT_VOLUME}:/home/inventree/data:z
+        environment:
+            - INVENTREE_DB_HOST=localhost
+            - INVENTREE_CACHE_HOST=localhost
         restart: unless-stopped
 
     # caddy acts as reverse proxy and static file server
