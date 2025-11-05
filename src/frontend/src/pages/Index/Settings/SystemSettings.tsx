@@ -63,6 +63,7 @@ export default function SystemSettings() {
               'INVENTREE_STRICT_URLS',
               'INVENTREE_BACKUP_ENABLE',
               'INVENTREE_BACKUP_DAYS',
+              'INVENTREE_BACKUP_RETENTION_DAYS',
               'INVENTREE_DELETE_TASKS_DAYS',
               'INVENTREE_DELETE_ERRORS_DAYS',
               'INVENTREE_DELETE_NOTIFICATIONS_DAYS',

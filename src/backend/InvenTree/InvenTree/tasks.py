@@ -6,6 +6,7 @@ import re
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Callable, Optional
 
 from django.conf import settings
@@ -28,7 +29,7 @@ from maintenance_mode.core import (
 from opentelemetry import trace
 
 from common.settings import get_global_setting, set_global_setting
-from InvenTree.config import get_setting
+from InvenTree.config import get_backup_dir, get_setting
 from plugin import registry
 
 from .version import isInvenTreeUpToDate
@@ -627,6 +628,71 @@ def update_exchange_rates(force: bool = False):
         logger.exception('Error updating exchange rates: %s', str(type(e)))
 
 
+@tracer.start_as_current_span('cleanup_old_backups')
+def cleanup_old_backups():
+    """Remove backup files older than the retention period."""
+    try:
+        backup_dir = get_backup_dir(create=False, error=False)
+        if not backup_dir or not backup_dir.exists():
+            logger.debug('Backup directory not configured or does not exist, skipping cleanup')
+            return
+
+        retention_days = int(get_global_setting('INVENTREE_BACKUP_RETENTION_DAYS', 7, cache=False))
+        threshold = datetime.now() - timedelta(days=retention_days)
+
+        deleted_count = 0
+        deleted_size = 0
+
+        # Find all backup files in the directory
+        for backup_file in backup_dir.iterdir():
+            try:
+                if not backup_file.is_file():
+                    continue
+
+                # Check if file is a backup file (common extensions: .dump, .tar.gz, .gz, .sql, .bak)
+                if backup_file.suffix in ['.dump', '.gz', '.sql', '.bak'] or \
+                   backup_file.name.endswith('.tar.gz') or \
+                   backup_file.name.startswith('db-') or \
+                   backup_file.name.startswith('media-'):
+                    
+                    # Get file modification time
+                    try:
+                        file_stat = backup_file.stat()
+                        file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+                    except OSError as e:
+                        logger.warning('Could not access file %s: %s', backup_file.name, str(e))
+                        continue
+                    
+                    if file_mtime < threshold:
+                        file_size = file_stat.st_size
+                        try:
+                            backup_file.unlink()
+                            deleted_count += 1
+                            deleted_size += file_size
+                            logger.info(
+                                'Deleted old backup file: %s (age: %d days)',
+                                backup_file.name,
+                                (datetime.now() - file_mtime).days
+                            )
+                        except OSError as e:
+                            logger.warning('Failed to delete backup file %s: %s', backup_file.name, str(e))
+            except Exception as e:
+                logger.warning('Error processing file %s: %s', backup_file.name if hasattr(backup_file, 'name') else str(backup_file), str(e))
+                continue
+
+        if deleted_count > 0:
+            logger.info(
+                'Backup cleanup completed: deleted %d file(s), freed %.2f MB',
+                deleted_count,
+                deleted_size / (1024 * 1024)
+            )
+        else:
+            logger.debug('No old backup files to clean up')
+
+    except Exception as e:
+        logger.exception('Error during backup cleanup: %s', str(e))
+
+
 @tracer.start_as_current_span('run_backup')
 @scheduled_task(ScheduledTask.DAILY)
 def run_backup():
@@ -647,6 +713,9 @@ def run_backup():
     call_command(
         'mediabackup', noinput=True, clean=True, compress=True, interactive=False
     )
+
+    # Clean up old backups after creating new ones
+    cleanup_old_backups()
 
     # Record that this task was successful
     record_task_success('run_backup')

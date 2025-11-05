@@ -306,6 +306,13 @@ SYSTEM_SETTINGS: dict[str, InvenTreeSettingsKeyType] = {
         'default': 1,
         'units': _('days'),
     },
+    'INVENTREE_BACKUP_RETENTION_DAYS': {
+        'name': _('Backup Retention Period'),
+        'description': _('Number of days to keep backup files (older backups will be automatically deleted)'),
+        'validator': [int, MinValueValidator(1)],
+        'default': 7,
+        'units': _('days'),
+    },
     'INVENTREE_DELETE_TASKS_DAYS': {
         'name': _('Task Deletion Interval'),
         'description': _(
